@@ -269,7 +269,7 @@ def main():
                 {"type": 4, "name": "columns.0.itemid", "value": str(itemid)},
                 {"type": 0, "name": "columns.0.display", "value": 1},
                 {"type": 0, "name": "columns.0.monospace_font", "value": 1},
-                {"type": 0, "name": "show_lines", "value": 40},
+                {"type": 0, "name": "show_lines", "value": 1},
                 {"type": 0, "name": "show_timestamp", "value": 0},
                 {"type": 0, "name": "show_column_header", "value": 0},
             ]
@@ -399,7 +399,7 @@ def main():
                             {"type": 4, "name": "columns.0.itemid", "value": str(dash_items[item_key])},
                             {"type": 0, "name": "columns.0.display", "value": 1},
                             {"type": 0, "name": "columns.0.monospace_font", "value": 1},
-                            {"type": 0, "name": "show_lines", "value": 40},
+                            {"type": 0, "name": "show_lines", "value": 1},
                             {"type": 0, "name": "show_timestamp", "value": 0},
                             {"type": 0, "name": "show_column_header", "value": 0},
                         ]
