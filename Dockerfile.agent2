@@ -2,6 +2,7 @@
 # Сборка: docker build -f Dockerfile.agent2 -t zabbix-agent2-with-curl .
 FROM zabbix/zabbix-agent2:alpine-7.4-latest
 USER root
-# docker-cli — пакет из репозитория community (в Alpine по умолчанию включён)
-RUN apk add --no-cache curl jq docker-cli
-USER zabbix
+# docker-cli — для UserParameter (виджеты контейнеров). Агент под root — доступ к /var/run/docker.sock.
+RUN apk add --no-cache curl jq docker-cli \
+    && which docker && docker --version
+# Оставляем USER root: иначе агент (zabbix) не имеет доступа к docker.sock на хосте

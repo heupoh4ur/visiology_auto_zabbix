@@ -136,6 +136,37 @@ prompt_if_empty() {
   fi
 }
 
+# Проверка обязательных компонентов (docker, docker compose, curl). При отсутствии — вывод подсказок по установке.
+check_requirements() {
+  local missing=()
+  command -v docker >/dev/null 2>&1 || missing+=("docker")
+  docker compose version >/dev/null 2>&1 || docker-compose --version >/dev/null 2>&1 || missing+=("docker compose")
+  command -v curl >/dev/null 2>&1 || missing+=("curl")
+  if [ ${#missing[@]} -gt 0 ]; then
+    log_err "Не найдены компоненты: ${missing[*]}."
+    echo ""
+    echo "  Установка (выберите подходящее для вашей ОС):"
+    echo ""
+    echo "  Debian/Ubuntu:"
+    echo "    sudo apt-get update"
+    echo "    sudo apt-get install -y curl docker.io docker-compose-plugin"
+    echo "    sudo systemctl enable --now docker"
+    echo ""
+    echo "  RHEL/CentOS/Rocky (dnf):"
+    echo "    sudo dnf install -y curl docker-ce docker-ce-cli containerd.io docker-compose-plugin"
+    echo "    sudo systemctl enable --now docker"
+    echo ""
+    echo "  После установки перезапустите установщик."
+    exit 1
+  fi
+  # Python 3 нужен для настройки через API
+  if ! command -v python3 >/dev/null 2>&1 && ! command -v python >/dev/null 2>&1; then
+    log_warn "Python 3 не найден. Для автоматической настройки через API (хост, дашборд) установите: sudo apt-get install -y python3  или  sudo dnf install -y python3"
+  fi
+}
+
+check_requirements
+
 # --- Приветствие и запрос параметров ---
 echo ""
 echo "  Zabbix 7.4 — установка в Docker (Visiology / автономно)"
@@ -230,10 +261,14 @@ fi
 # Файлы для настройки по API
 cp -f "$SCRIPT_DIR/zabbix-init-config.py" "$INSTALL_DIR/" 2>/dev/null || true
 cp -f "$SCRIPT_DIR/zabbix-init-config.env" "$INSTALL_DIR/" 2>/dev/null || true
-# Локальный env для init-config (адрес Zabbix и IP агента для опроса из Docker)
+# Локальный env для init-config: URL веб-интерфейса (как к нему подключаться) и IP агента
 {
   echo "# Сгенерировано установщиком. Для ручного запуска: python3 zabbix-init-config.py"
-  echo "ZABBIX_URL=http://${SERVER_IP}:8080"
+  if [ "$URL_MODE" = "v3zabbix" ]; then
+    echo "ZABBIX_URL=http://${SERVER_IP}/v3/zabbix"
+  else
+    echo "ZABBIX_URL=http://${SERVER_IP}:8080"
+  fi
   echo "ZABBIX_AGENT_IP=${ZABBIX_AGENT_IP:-172.17.0.1}"
 } > "$INSTALL_DIR/zabbix-init-config.local.env" 2>/dev/null || true
 # Каталог agent2.d (99_server_active.conf, 98_docker_commands.conf для виджетов)

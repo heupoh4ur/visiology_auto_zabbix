@@ -260,21 +260,38 @@ def main():
             "x": 0, "y": 0, "width": 24, "height": 5, "view_mode": 0,
             "fields": [{"type": 2, "name": "groupids.0", "value": gid}, {"type": 1, "name": "reference", "value": "SEV01"}],
         })
+        # Виджет «Item history»: многострочный вывод «как в таблице», моноширинный шрифт (display As is).
+        def itemhistory_fields(itemid, ref_5ch, column_name):
+            return [
+                {"type": 1, "name": "reference", "value": ref_5ch},
+                {"type": 0, "name": "layout", "value": 1},
+                {"type": 1, "name": "columns.0.name", "value": column_name},
+                {"type": 4, "name": "columns.0.itemid", "value": str(itemid)},
+                {"type": 0, "name": "columns.0.display", "value": 1},
+                {"type": 0, "name": "columns.0.monospace_font", "value": 1},
+                {"type": 0, "name": "show_lines", "value": 40},
+                {"type": 0, "name": "show_timestamp", "value": 0},
+                {"type": 0, "name": "show_column_header", "value": 0},
+            ]
+        item_font_fields = [
+            {"type": 0, "name": "desc_size", "value": 7},
+            {"type": 0, "name": "value_size", "value": 8},
+        ]
         item_services = dash_items.get(items_to_ensure[0][1])
         if item_services:
             w.append({
-                "type": "item",
+                "type": "itemhistory",
                 "name": "Запущенные контейнеры (docker service ls)",
                 "x": 24, "y": 0, "width": 24, "height": 10, "view_mode": 0,
-                "fields": [{"type": 4, "name": "itemid.0", "value": str(item_services)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
+                "fields": itemhistory_fields(item_services, "SVC01", "docker service ls"),
             })
         item_exited = dash_items.get(items_to_ensure[1][1])
         if item_exited:
             w.append({
-                "type": "item",
+                "type": "itemhistory",
                 "name": "Exited контейнеры",
                 "x": 48, "y": 0, "width": 24, "height": 10, "view_mode": 0,
-                "fields": [{"type": 4, "name": "itemid.0", "value": str(item_exited)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
+                "fields": itemhistory_fields(item_exited, "EXI01", "exited"),
             })
         # Ряд 1: Проблемы и предупреждения
         w.append({
@@ -310,7 +327,12 @@ def main():
                 "type": "item",
                 "name": "Диск: объём и свободно",
                 "x": 12, "y": 28, "width": 12, "height": 8, "view_mode": 0,
-                "fields": [{"type": 4, "name": "itemid.0", "value": str(item_disk_summary)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
+                "fields": [
+                    {"type": 4, "name": "itemid.0", "value": str(item_disk_summary)},
+                    {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2},
+                    {"type": 0, "name": "desc_size", "value": 7},
+                    {"type": 0, "name": "value_size", "value": 8},
+                ],
             })
         item_swarm = dash_items.get(items_to_ensure[2][1])
         if item_swarm:
@@ -352,19 +374,57 @@ def main():
                 "Диск: объём и свободно": items_to_ensure[4][1],
                 "Состояние Docker Swarm": items_to_ensure[2][1],
             }
+            table_widget_names = ("Запущенные контейнеры (docker service ls)", "Запущенные контейнеры (docker ps)", "Exited контейнеры")
+            ref_and_col = {
+                "Запущенные контейнеры (docker service ls)": ("SVC01", "docker service ls"),
+                "Запущенные контейнеры (docker ps)": ("SVC01", "docker service ls"),
+                "Exited контейнеры": ("EXI01", "exited"),
+            }
+            font_size_names = ("Диск: объём и свободно",)
             clean_widgets = []
             for w in page.get("widgets", []):
-                clean = {"type": w["type"], "name": w.get("name", ""), "x": w.get("x", 0), "y": w.get("y", 0), "width": w.get("width", 6), "height": w.get("height", 4), "view_mode": w.get("view_mode", 0)}
+                wname = w.get("name", "")
+                clean = {"type": w["type"], "name": wname, "x": w.get("x", 0), "y": w.get("y", 0), "width": w.get("width", 6), "height": w.get("height", 4), "view_mode": w.get("view_mode", 0)}
                 if w.get("widgetid"):
                     clean["widgetid"] = w["widgetid"]
-                if w.get("fields") is not None:
+                if wname in table_widget_names:
+                    item_key = name_to_key.get(wname)
+                    if item_key and item_key in dash_items:
+                        ref, col = ref_and_col.get(wname, ("REF01", "Value"))
+                        clean["type"] = "itemhistory"
+                        clean["fields"] = [
+                            {"type": 1, "name": "reference", "value": ref},
+                            {"type": 0, "name": "layout", "value": 1},
+                            {"type": 1, "name": "columns.0.name", "value": col},
+                            {"type": 4, "name": "columns.0.itemid", "value": str(dash_items[item_key])},
+                            {"type": 0, "name": "columns.0.display", "value": 1},
+                            {"type": 0, "name": "columns.0.monospace_font", "value": 1},
+                            {"type": 0, "name": "show_lines", "value": 40},
+                            {"type": 0, "name": "show_timestamp", "value": 0},
+                            {"type": 0, "name": "show_column_header", "value": 0},
+                        ]
+                elif w.get("fields") is not None:
                     fields = list(w["fields"])
-                    item_key = name_to_key.get(w.get("name"))
+                    item_key = name_to_key.get(wname)
                     if item_key and item_key in dash_items:
                         for i, f in enumerate(fields):
                             if isinstance(f, dict) and f.get("name") == "itemid.0":
                                 fields[i] = {"type": 4, "name": "itemid.0", "value": str(dash_items[item_key])}
                                 break
+                    if w.get("type") == "item" and wname in font_size_names:
+                        has_desc, has_val = False, False
+                        for i, f in enumerate(fields):
+                            if isinstance(f, dict):
+                                if f.get("name") == "desc_size":
+                                    fields[i] = {"type": 0, "name": "desc_size", "value": 7}
+                                    has_desc = True
+                                elif f.get("name") == "value_size":
+                                    fields[i] = {"type": 0, "name": "value_size", "value": 8}
+                                    has_val = True
+                        if not has_desc:
+                            fields.append({"type": 0, "name": "desc_size", "value": 7})
+                        if not has_val:
+                            fields.append({"type": 0, "name": "value_size", "value": 8})
                     clean["fields"] = fields
                 clean_widgets.append(clean)
             for nw in to_add:
