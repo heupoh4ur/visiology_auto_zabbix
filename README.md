@@ -70,21 +70,21 @@ chmod +x install-zabbix.sh
 
 - **Верхний ряд (сводка и Docker):**
   - **Проблемы по важности** — количество проблем по уровням (Warning, Average, High, Disaster) по группе хостов Visiology. Позволяет сразу увидеть, есть ли критические срабатывания.
-  - **Запущенные контейнеры (docker ps)** — список в формате: «Запущено: N контейнер(ов)», затем таблица **Имя | ID (12) | Статус**. Аналог вывода `docker ps`.
-  - **Exited контейнеры** — список контейнеров в состоянии `exited`: **имя | ID | статус** (в т.ч. когда завершён, напр. «Exited (0) 2 days ago»).
+  - **Запущенные контейнеры (docker service ls)** — вывод команды `docker service ls`: таблица **ID | NAME | MODE | REPLICAS | IMAGE** (как в терминале).
+  - **Exited контейнеры** — вывод `docker ps -a --filter status=exited`: таблица **CONTAINER ID | NAMES | STATUS**.
 
 - **Средний ряд:**
   - **Проблемы и предупреждения** — таблица текущих проблем (триггеров в состоянии «Problem») по группе Visiology: хост, описание, важность, время. Если проблем нет — таблица пуста; виджет работоспособен при наличии сработавших триггеров.
 
 - **Нижний ряд (ресурсы и Swarm):**
   - **Свободно места на диске (%)** — виджет «Счётчик» (Gauge): процент свободного места по корню хоста (`/hostfs`).
-  - **Диск: объём и свободно** — текст вида «X% свободно», «Y GB из Z GB» (размер тома и доступно).
+  - **Диск: объём и свободно** — одна строка: **объём тома / свободно** (напр. «500.0 GB / 125.0 GB свободно»).
   - **Состояние Docker Swarm** — значение `docker info --format '{{.Swarm.LocalNodeState}}'` (например `active` или `inactive`).
 
 ### Откуда берутся данные
 
 - Данные по **проблемам** — из Zabbix (триггеры по шаблонам и кастомным правилам).
-- Данные по **контейнерам, Swarm и диску** — с хоста через Zabbix Agent. В `agent2.d/98_docker_commands.conf` заданы UserParameter с **curl** и **jq**: вывод контейнеров — читаемый список (имя, ID, статус), не JSON. Элементы: `docker.containers.running.list`, `docker.containers.exited.list`, `docker.swarm.state`, `vfs.fs.size[/hostfs,pfree]`, `hostfs.disk.summary` (объём и свободно). Образ агента должен содержать curl и jq — установщик собирает `zabbix-agent2-with-curl` из `Dockerfile.agent2` (apk add curl jq). При ручной установке: `docker build -f Dockerfile.agent2 -t zabbix-agent2-with-curl .`.
+- Данные по **контейнерам, Swarm и диску** — с хоста через Zabbix Agent. В `agent2.d/98_docker_commands.conf` заданы UserParameter: **docker service ls** (таблица сервисов), **docker ps -a --filter status=exited** (exited-контейнеры), состояние Swarm, сводка диска «объём / свободно». Для этого в образ агента нужны **docker-cli**, **curl** и **jq** — установщик собирает `zabbix-agent2-with-curl` из `Dockerfile.agent2` (apk add curl jq docker-cli). При ручной установке: `docker build -f Dockerfile.agent2 -t zabbix-agent2-with-curl .`.
 
 ### Где смотреть
 
@@ -175,9 +175,9 @@ visiology_auto_zabbix/
 ├── .env.example                  # Пример переменных окружения для контейнеров
 ├── nginx_http_d.conf             # Nginx для доступа по /v3/zabbix
 ├── nginx_http_d_standard.conf    # Nginx для доступа по http://IP:8080
-├── Dockerfile.agent2              # Образ агента с curl и jq (виджеты Docker/Swarm, читаемые списки); установщик собирает его
+├── Dockerfile.agent2              # Образ агента с curl, jq и docker-cli (docker service ls, docker ps); установщик собирает его
 ├── agent2.d/
-│   ├── 98_docker_commands.conf   # UserParameter: списки контейнеров (jq), Swarm, сводка диска
+│   ├── 98_docker_commands.conf   # UserParameter: docker service ls, docker ps exited, Swarm, сводка диска
 │   └── 99_server_active.conf     # Переопределение ServerActive для агента
 ├── zabbix-init-config.py         # Настройка Zabbix через API (хост, шаблоны, триггер, дашборд)
 └── zabbix-init-config.env        # Пример переменных для zabbix-init-config.py

@@ -85,7 +85,7 @@ cd ~/zabbix
 
 Если используете скрипт **install-zabbix.sh** (раздел 0), выполните на сервере `git clone` репозитория (или скопируйте каталог на сервер), затем `chmod +x install-zabbix.sh` и `./install-zabbix.sh`.
 
-Вручную (без скрипта): с рабочей машины под Linux скопируйте файлы на сервер. Замените `РЕПО` на имя каталога репозитория, `IP_СЕРВЕРА` и имя пользователя при необходимости. Если планируете автоматическую настройку (п. 4.2), добавьте в команду `scp` файлы `zabbix-init-config.py`, `zabbix-init-config.env`, каталог `agent2.d` (с файлами `98_docker_commands.conf` и `99_server_active.conf`) и `Dockerfile.agent2` (для сборки образа агента с curl — виджеты дашборда).
+Вручную (без скрипта): с рабочей машины под Linux скопируйте файлы на сервер. Замените `РЕПО` на имя каталога репозитория, `IP_СЕРВЕРА` и имя пользователя при необходимости. Если планируете автоматическую настройку (п. 4.2), добавьте в команду `scp` файлы `zabbix-init-config.py`, `zabbix-init-config.env`, каталог `agent2.d` (с файлами `98_docker_commands.conf` и `99_server_active.conf`) и `Dockerfile.agent2` (образ с curl, jq и docker-cli — виджеты docker service ls, docker ps, диск).
 
 ```bash
 scp -P 22 РЕПО/docker-compose.yml РЕПО/nginx_http_d.conf РЕПО/.env.example USER@IP_СЕРВЕРА:~/zabbix/
@@ -115,6 +115,7 @@ nano .env
 cd ~/zabbix
 # или  cd /opt/zabbix
 docker build -f Dockerfile.agent2 -t zabbix-agent2-with-curl .
+# В образе: curl, jq, docker-cli (для вывода docker service ls и docker ps в виджетах).
 ```
 
 Если `Dockerfile.agent2` нет или сборка не нужна, в `.env` добавьте: `ZABBIX_AGENT2_IMAGE=zabbix/zabbix-agent2:alpine-7.4-latest` — тогда виджеты Docker/Swarm будут показывать «No data».

@@ -178,9 +178,9 @@ def main():
     ifaces = api_request("hostinterface.get", {"hostids": hostid, "output": ["interfaceid"]}, auth)
     interfaceid = int(ifaces[0]["interfaceid"]) if ifaces else None
     dash_items = {}
-    # Ключи .list — читаемый список (имя, ID, статус). Диск: % и сводка «X GB из Y GB»
+    # Виджеты: docker service ls (таблица сервисов), docker ps exited, Swarm, диск % и «объём / свободно»
     items_to_ensure = [
-        ("Docker: running containers list", "docker.containers.running.list", 4, None),
+        ("Docker: services (docker service ls)", "docker.services.list", 4, None),
         ("Docker: exited containers list", "docker.containers.exited.list", 4, None),
         ("Docker: Swarm state", "docker.swarm.state", 4, None),
         ("Disk: /hostfs free %", "vfs.fs.size[/hostfs,pfree]", 0, "%"),
@@ -260,13 +260,13 @@ def main():
             "x": 0, "y": 0, "width": 24, "height": 5, "view_mode": 0,
             "fields": [{"type": 2, "name": "groupids.0", "value": gid}, {"type": 1, "name": "reference", "value": "SEV01"}],
         })
-        item_running = dash_items.get(items_to_ensure[0][1])
-        if item_running:
+        item_services = dash_items.get(items_to_ensure[0][1])
+        if item_services:
             w.append({
                 "type": "item",
-                "name": "Запущенные контейнеры (docker ps)",
+                "name": "Запущенные контейнеры (docker service ls)",
                 "x": 24, "y": 0, "width": 24, "height": 10, "view_mode": 0,
-                "fields": [{"type": 4, "name": "itemid.0", "value": str(item_running)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
+                "fields": [{"type": 4, "name": "itemid.0", "value": str(item_services)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
             })
         item_exited = dash_items.get(items_to_ensure[1][1])
         if item_exited:
@@ -337,6 +337,7 @@ def main():
             to_add = [nw for nw in new_widgets if nw["name"] not in existing_names]
             max_bottom = max((int(w.get("y", 0)) + int(w.get("height", 4)) for w in page.get("widgets", [])), default=0)
             pos_by_name = {
+                "Запущенные контейнеры (docker service ls)": (0, max_bottom, 24, 10),
                 "Запущенные контейнеры (docker ps)": (0, max_bottom, 24, 10),
                 "Exited контейнеры": (24, max_bottom, 24, 10),
                 "Свободно места на диске (%)": (48, max_bottom, 12, 8),
@@ -344,6 +345,7 @@ def main():
                 "Состояние Docker Swarm": (0, max_bottom + 10, 24, 10),
             }
             name_to_key = {
+                "Запущенные контейнеры (docker service ls)": items_to_ensure[0][1],
                 "Запущенные контейнеры (docker ps)": items_to_ensure[0][1],
                 "Exited контейнеры": items_to_ensure[1][1],
                 "Свободно места на диске (%)": items_to_ensure[3][1],
