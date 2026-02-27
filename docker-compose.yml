@@ -1,0 +1,104 @@
+# Zabbix 7.4 для мониторинга сервера Visiology
+# Запуск: docker compose up -d
+# Веб-интерфейс: http://<IP_СЕРВЕРА>:8080  (Admin / zabbix)
+
+services:
+  zabbix-db:
+    image: postgres:17-alpine
+    container_name: zabbix-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zabbix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zabbix}
+      POSTGRES_DB: ${POSTGRES_DB:-zabbix}
+    volumes:
+      - zabbix_db_data:/var/lib/postgresql/data
+    networks:
+      - zabbix-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zabbix} -d ${POSTGRES_DB:-zabbix}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  zabbix-server:
+    image: zabbix/zabbix-server-pgsql:alpine-7.4-latest
+    container_name: zabbix-server
+    restart: unless-stopped
+    ports:
+      - "${ZABBIX_SERVER_PORT:-10051}:10051"
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: ${POSTGRES_USER:-zabbix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zabbix}
+      POSTGRES_DB: ${POSTGRES_DB:-zabbix}
+    volumes:
+      - zabbix_export:/var/lib/zabbix/export
+      - zabbix_snmptraps:/var/lib/zabbix/snmptraps
+    depends_on:
+      zabbix-db:
+        condition: service_healthy
+    networks:
+      - zabbix-backend
+      - zabbix-frontend
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-pgsql:alpine-7.4-latest
+    container_name: zabbix-web
+    restart: unless-stopped
+    ports:
+      - "${ZABBIX_WEB_PORT:-8080}:8080"
+      - "${ZABBIX_WEB_SSL_PORT:-8443}:8443"
+    volumes:
+      - ./nginx_http_d.conf:/etc/nginx/http.d/nginx.conf:ro
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_USER: ${POSTGRES_USER:-zabbix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zabbix}
+      POSTGRES_DB: ${POSTGRES_DB:-zabbix}
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: ${TZ:-Europe/Moscow}
+      ZBX_FRONTEND_URL: ${ZBX_FRONTEND_URL:-http://192.168.31.100/v3/zabbix}
+    depends_on:
+      zabbix-db:
+        condition: service_healthy
+      zabbix-server:
+        condition: service_started
+    networks:
+      - zabbix-backend
+      - zabbix-frontend
+
+  # Агент: мониторинг хоста (диск, сеть, Docker/Swarm). С host network подключается к серверу по 127.0.0.1.
+  # В Server должны быть и 127.0.0.1, и подсеть Docker (172.16.0.0/12), иначе сервер из контейнера не достучится до агента (пассивные проверки).
+  zabbix-agent2:
+    image: zabbix/zabbix-agent2:alpine-7.4-latest
+    container_name: zabbix-agent2
+    restart: unless-stopped
+    environment:
+      ZBX_SERVER_HOST: ${ZBX_SERVER_HOST:-127.0.0.1,172.16.0.0/12}
+      ZBX_SERVER_PORT: 10051
+      ZBX_HOSTNAME: ${ZBX_HOSTNAME:-Visiology-Server}
+      ZBX_HOSTMETADATA: ${ZBX_HOSTMETADATA:-visiology}
+      ZBX_HOSTFS: /hostfs
+    volumes:
+      - /:/hostfs:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/hostfs/proc:ro
+      - /sys:/hostfs/sys:ro
+    privileged: true
+    pid: host
+    network_mode: host
+    depends_on:
+      - zabbix-server
+
+volumes:
+  zabbix_db_data:
+  zabbix_export:
+  zabbix_snmptraps:
+
+networks:
+  zabbix-backend:
+    driver: bridge
+    internal: true
+  zabbix-frontend:
+    driver: bridge
