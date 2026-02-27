@@ -2,7 +2,7 @@
 
 Инструкция для работы **с машины под Linux**: развёртывание Zabbix 7.4 в Docker на сервере с Visiology, мониторинг компонентов Visiology, Docker Swarm, сети, диска (warning при свободном месте &lt; 25%) и доступ по **http://&lt;IP&gt;/v3/zabbix** через reverse proxy.
 
-**В этом репозитории (autozabbix)** все файлы лежат в корне каталога. После клонирования (`git clone ... autozabbix`) перейдите в `autozabbix` и запускайте установщик или копируйте файлы оттуда.
+Все файлы лежат в корне репозитория. После клонирования перейдите в каталог репозитория и запускайте установщик или копируйте файлы оттуда.
 
 ---
 
@@ -10,7 +10,7 @@
 
 Скрипт **install-zabbix.sh** в корне репозитория выполняет установку Zabbix в Docker и при необходимости настройку через API и интеграцию с Visiology.
 
-**Запуск на сервере** (из каталога `autozabbix` после клонирования):
+**Запуск на сервере** (из каталога репозитория после клонирования):
 
 ```bash
 chmod +x install-zabbix.sh
@@ -80,14 +80,14 @@ cd ~/zabbix
 
 ### 2.2. Копирование docker-compose, nginx_http_d.conf и .env
 
-Если используете скрипт **install-zabbix.sh** (раздел 0), скопируйте на сервер весь каталог репозитория **autozabbix** (или выполните `git clone` на сервере), затем на сервере выполните `chmod +x install-zabbix.sh` и `./install-zabbix.sh`.
+Если используете скрипт **install-zabbix.sh** (раздел 0), выполните на сервере `git clone` репозитория (или скопируйте каталог на сервер), затем `chmod +x install-zabbix.sh` и `./install-zabbix.sh`.
 
-Вручную (без скрипта): с рабочей машины под Linux скопируйте файлы на сервер. Замените `IP_СЕРВЕРА` и имя пользователя при необходимости. Если планируете автоматическую настройку (п. 4.2), добавьте в команду `scp` файлы `zabbix-init-config.py` и `zabbix-init-config.env`.
+Вручную (без скрипта): с рабочей машины под Linux скопируйте файлы на сервер. Замените `РЕПО` на имя каталога репозитория, `IP_СЕРВЕРА` и имя пользователя при необходимости. Если планируете автоматическую настройку (п. 4.2), добавьте в команду `scp` файлы `zabbix-init-config.py` и `zabbix-init-config.env`.
 
 ```bash
-scp -P 22 autozabbix/docker-compose.yml autozabbix/nginx_http_d.conf autozabbix/.env.example USER@IP_СЕРВЕРА:~/zabbix/
+scp -P 22 РЕПО/docker-compose.yml РЕПО/nginx_http_d.conf РЕПО/.env.example USER@IP_СЕРВЕРА:~/zabbix/
 ```
-При использовании п. 4.2 добавьте к списку файлов: `autozabbix/zabbix-init-config.py autozabbix/zabbix-init-config.env`
+При использовании п. 4.2 добавьте к списку: `РЕПО/zabbix-init-config.py РЕПО/zabbix-init-config.env`
 
 На сервере:
 
@@ -201,7 +201,7 @@ docker compose logs -f zabbix-web
 
 Все надстройки (группа, хост с агентом, шаблоны **Linux by Zabbix agent 2** и **Docker by Zabbix agent 2**, триггер «свободно места на диске меньше 25%») можно внести одной командой через Zabbix API.
 
-1. **Скопируйте на сервер** (или на машину с доступом к Zabbix) файлы из каталога **autozabbix**:
+1. **Скопируйте на сервер** (или на машину с доступом к Zabbix) файлы из корня репозитория:
    - `zabbix-init-config.py`
    - `zabbix-init-config.env`
 2. **Настройте параметры:** скопируйте `zabbix-init-config.env` в `zabbix-init-config.local.env` и задайте:
@@ -244,7 +244,7 @@ docker compose logs -f zabbix-web
    - **Docker by Zabbix agent 2** — контейнеры, образы, Docker/Swarm (требуется доступ к `/var/run/docker.sock`, уже настроен в агенте).
 3. **Add** → **Update**.
 
-Через 1–2 минуты на вкладке **Latest data** появятся данные. Если в Zabbix показывается **«Агент недоступен»** или данных нет: сервер опрашивает агент из контейнера (пассивные проверки), а агент по умолчанию принимает только подключения с `127.0.0.1`. В `docker-compose` для агента должно быть задано `ZBX_SERVER_HOST: 127.0.0.1,172.16.0.0/12` (см. раздел 2 и текущий `docker-compose.yml`), затем выполните `docker compose up -d` и перезапустите контейнер `zabbix-agent2`. Также проверьте, что контейнер агента запущен и на хосте открыт порт 10050.
+Через 1–2 минуты на вкладке **Latest data** появятся данные. **«Агент недоступен»:** в `docker-compose` для агента должно быть `ZBX_SERVER_HOST: 127.0.0.1,172.16.0.0/12`, затем `docker compose up -d` и `docker restart zabbix-agent2`; у хоста в Zabbix в интерфейсе Agent укажите IP сервера и порт 10050. **«Docker failed to fetch info data»:** у сервиса `zabbix-agent2` в compose должен быть `user: "0:0"` (доступ к docker.sock), затем перезапустите агент.
 
 ### 6.1. Импорт своих шаблонов и ошибка «unsupported version number»
 
@@ -334,9 +334,9 @@ Severity: **Warning**.
 Чтобы развернуть такой же Zabbix на **другом** сервере с Visiology (с машины под Linux):
 
 1. Убедитесь, что на целевом сервере установлены Docker и Docker Compose.
-2. Клонируйте репозиторий на новый сервер: `git clone https://github.com/heupoh/autozabbix.git` (или скопируйте каталог **autozabbix**). Файлы для установки — в корне клонированного каталога.
+2. Клонируйте репозиторий на новый сервер (или скопируйте каталог). Файлы для установки — в корне клонированного каталога.
    На целевом сервере: `cd ~/zabbix && cp .env.example .env` (если устанавливаете вручную) и отредактируйте `.env` (ZBX_HOSTNAME, TZ, пароли, при доступе по /v3/zabbix — ZBX_FRONTEND_URL).
-3. Запустите Zabbix (или выполните `./install-zabbix.sh` из каталога autozabbix):
+3. Запустите Zabbix (или выполните `./install-zabbix.sh` из каталога репозитория):
    ```bash
    cd ~/zabbix
    docker compose up -d
@@ -360,11 +360,11 @@ Severity: **Warning**.
 
 ---
 
-## 12. Структура файлов в репозитории (autozabbix)
+## 12. Структура файлов в репозитории
 
 Все файлы в **корне** каталога репозитория:
 
-- **docker-compose.yml** — сервисы: PostgreSQL, Zabbix Server, Zabbix Web (Nginx), Zabbix Agent 2 (с монтированием `/` в `/hostfs` и `docker.sock` для мониторинга хоста и Docker). У агента задаётся `ZBX_SERVER_HOST: 127.0.0.1,172.16.0.0/12`, чтобы он принимал пассивные проверки и от сервера в контейнере (Docker-подсеть). Для доступа по /v3/zabbix в zabbix-web монтируется `nginx_http_d.conf`.
+- **docker-compose.yml** — сервисы: PostgreSQL, Zabbix Server, Zabbix Web (Nginx), Zabbix Agent 2 (с монтированием `/` в `/hostfs` и `docker.sock` для мониторинга хоста и Docker). У агента: `ZBX_SERVER_HOST: 127.0.0.1,172.16.0.0/12` (принимать пассивные проверки от сервера в контейнере), `user: "0:0"` (доступ к docker.sock, иначе «Docker failed to fetch info data»). Для доступа по /v3/zabbix в zabbix-web монтируется `nginx_http_d.conf`.
 - **zabbix-init-config.env** — пример переменных для скрипта автоматической настройки (URL, логин, имя хоста, IP агента). Копируется в `zabbix-init-config.local.env` и при необходимости редактируется.
 - **zabbix-init-config.py** — скрипт настройки Zabbix через API: создаёт группу, хост с агентом, подключает шаблоны **Linux by Zabbix agent 2** и **Docker by Zabbix agent 2**, добавляет триггер «свободно места на диске меньше 25%». Запуск: `python3 zabbix-init-config.py` (см. п. 4.2).
 - **install-zabbix.sh** — установка «в один клик»: копирует файлы, поднимает контейнеры, при необходимости настраивает Zabbix через API и добавляет /v3/zabbix в Visiology. Запуск: `./install-zabbix.sh` (интерактивно) или `./install-zabbix.sh -d` (отладка). Параметры через переменные: `INSTALL_DIR`, `URL_MODE`, `DO_API_CONFIG`, `VISIOLOGY_INTEGRATE`, `SERVER_IP` (см. раздел 0).

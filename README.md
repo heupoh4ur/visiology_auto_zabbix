@@ -6,7 +6,7 @@
 
 ## Содержание
 
-- [Как залить на GitHub и начать установку](#как-залить-на-github-и-начать-установку)
+- [Установка на сервере](#установка-на-сервере)
 - [Возможности](#возможности)
 - [Требования](#требования)
 - [Быстрый старт (установщик)](#быстрый-старт-установщик)
@@ -15,55 +15,25 @@
 - [Конфигурация](#конфигурация)
 - [Доступ и учётные данные](#доступ-и-учётные-данные)
 - [Устранение неполадок](#устранение-неполадок)
+- [Обновление после git pull](#обновление-после-git-pull)
 - [Полезные команды](#полезные-команды)
 
 ---
 
-## Как залить на GitHub и начать установку
+## Установка на сервере
 
-### 1. Залить проект на GitHub
-
-На компьютере, где лежит папка **autozabbix** (или **heupoh/autozabbix**):
+На **сервере с Linux** (где будет работать Zabbix) клонируйте репозиторий и запустите установщик:
 
 ```bash
-cd heupoh/autozabbix
-# или  cd autozabbix  — если вы уже внутри каталога проекта
-
-git init
-git add .
-git commit -m "Initial commit: Zabbix 7.4 installer for Visiology"
-```
-
-Создайте **новый репозиторий** на GitHub (например `heupoh/autozabbix`):  
-[https://github.com/new](https://github.com/new) — укажите имя репозитория, не добавляйте README/.gitignore (они уже есть в проекте).
-
-Затем привяжите удалённый репозиторий и отправьте код:
-
-```bash
-git remote add origin https://github.com/heupoh/autozabbix.git
-# Если репозиторий под другой учёткой или именем — замените heupoh/autozabbix на свой
-
-git branch -M main
-git push -u origin main
-```
-
-При запросе авторизации используйте логин/пароль GitHub или [Personal Access Token](https://github.com/settings/tokens).
-
-### 2. Установка на сервере (после пуша)
-
-На **сервере с Linux** (где будет работать Zabbix):
-
-```bash
-git clone https://github.com/heupoh/autozabbix.git
-cd autozabbix
+git clone https://github.com/heupoh4ur/visiology_auto_zabbix.git
+cd visiology_auto_zabbix
 chmod +x install-zabbix.sh
 ./install-zabbix.sh
 ```
 
-Дальше установщик задаст вопросы (каталог, режим доступа, Visiology, настройка по API). После завершения откройте в браузере выданный адрес (логин **Admin**, пароль **zabbix**).
+Установщик задаст вопросы: каталог установки, режим доступа (http://IP:8080 или /v3/zabbix), интеграция с Visiology, настройка через API. После завершения откройте в браузере выданный адрес (логин **Admin**, пароль **zabbix**).
 
-**Режим отладки** (если что-то пошло не так):  
-`./install-zabbix.sh -d`
+**Режим отладки:** `./install-zabbix.sh -d`
 
 ---
 
@@ -93,12 +63,11 @@ chmod +x install-zabbix.sh
 
 ## Быстрый старт (установщик)
 
-1. Клонируйте репозиторий на сервер (см. [выше](#2-установка-на-сервере-после-пуша)).
+1. Клонируйте репозиторий на сервер и перейдите в каталог (см. [Установка на сервере](#установка-на-сервере)).
 
-2. Перейдите в каталог и запустите установщик:
+2. Запустите установщик:
 
 ```bash
-cd autozabbix
 chmod +x install-zabbix.sh
 ./install-zabbix.sh
 ```
@@ -147,7 +116,7 @@ URL_MODE=v3zabbix VISIOLOGY_INTEGRATE=1 DO_API_CONFIG=1 SERVER_IP=192.168.31.100
 
 Если установщик не используется:
 
-1. Клонируйте репозиторий. В каталоге **autozabbix** уже есть все нужные файлы в корне.
+1. Клонируйте репозиторий. В корне клонированного каталога лежат все нужные файлы.
 2. Скопируйте в каталог установки (например `~/zabbix`): `docker-compose.yml`, `.env.example` → `.env`, а также `nginx_http_d.conf` (для /v3/zabbix) или `nginx_http_d_standard.conf` → сохранить как `nginx_http_d.conf` (для http://IP:8080).
 3. Отредактируйте `.env`: пароли, `ZBX_HOSTNAME`, `TZ`. Для доступа по /v3/zabbix добавьте `ZBX_FRONTEND_URL=http://<IP>/v3/zabbix`.
 4. Запустите: `cd ~/zabbix && docker compose up -d`.
@@ -159,10 +128,10 @@ URL_MODE=v3zabbix VISIOLOGY_INTEGRATE=1 DO_API_CONFIG=1 SERVER_IP=192.168.31.100
 
 ## Структура репозитория
 
-Все файлы лежат в **корне репозитория** (после клонирования — в каталоге `autozabbix`):
+Все файлы лежат в **корне репозитория** (после клонирования — в каталоге `visiology_auto_zabbix` или как вы назвали при clone):
 
 ```
-autozabbix/
+visiology_auto_zabbix/
 ├── README.md                      # Этот файл
 ├── zabbix_visiology_install.md   # Подробная инструкция по установке и настройке
 ├── .gitignore
@@ -226,7 +195,17 @@ autozabbix/
 ZBX_SERVER_HOST: 127.0.0.1,172.16.0.0/12
 ```
 
-После изменения выполните `docker compose up -d` и `docker restart zabbix-agent2`. Убедитесь, что порт 10050 на хосте открыт и контейнер агента запущен.
+После изменения выполните `docker compose up -d` и `docker restart zabbix-agent2`. Убедитесь, что порт 10050 на хосте открыт и контейнер агента запущен. В Zabbix у хоста **Visiology-Server** в интерфейсе Agent должен быть указан **IP сервера** (на котором крутится агент) и порт **10050**.
+
+### Docker failed to fetch info data
+
+Ошибка возникает, когда процесс zabbix-agent2 в контейнере (по умолчанию пользователь `zabbix`) не может читать `/var/run/docker.sock`. В `docker-compose.yml` у сервиса `zabbix-agent2` добавьте запуск от root:
+
+```yaml
+user: "0:0"
+```
+
+Затем выполните `docker compose up -d` и `docker restart zabbix-agent2`. После этого элементы шаблона «Docker by Zabbix agent 2» должны начать получать данные.
 
 ### Ошибка импорта шаблона: «unsupported version number»
 
@@ -238,6 +217,12 @@ ZBX_SERVER_HOST: 127.0.0.1,172.16.0.0/12
 ### Цикл редиректов или скачивание zabbix.php при доступе по /v3/zabbix
 
 В контейнере zabbix-web должен монтироваться кастомный `nginx_http_d.conf` (с обработкой пути `/v3/zabbix/` и передачей полного REQUEST_URI в PHP). Проверьте, что в каталоге установки есть файл `nginx_http_d.conf` из репозитория (режим /v3/zabbix), а в `docker-compose.yml` указан объём `./nginx_http_d.conf:/etc/nginx/http.d/nginx.conf:ro`. В конфиге reverse proxy Visiology для Zabbix должен использоваться `proxy_pass` **без** завершающего слеша.
+
+---
+
+## Обновление после git pull
+
+На сервере после `git pull` обновите каталог установки (например `~/zabbix`): скопируйте туда обновлённый `docker-compose.yml` из репозитория, затем выполните `docker compose up -d` и `docker restart zabbix-agent2`.
 
 ---
 
