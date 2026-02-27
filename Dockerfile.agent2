@@ -3,5 +3,5 @@
 # В docker-compose.yml замените image на zabbix-agent2-with-curl (или свой тег).
 FROM zabbix/zabbix-agent2:alpine-7.4-latest
 USER root
-RUN apk add --no-cache curl
+RUN apk add --no-cache curl jq
 USER zabbix

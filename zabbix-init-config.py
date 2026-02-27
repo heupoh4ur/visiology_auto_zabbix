@@ -39,7 +39,7 @@ ZABBIX_URL = env("ZABBIX_URL", "http://127.0.0.1:8080").rstrip("/")
 ZABBIX_USER = env("ZABBIX_USER", "Admin")
 ZABBIX_PASSWORD = env("ZABBIX_PASSWORD", "zabbix")
 ZBX_HOSTNAME = env("ZBX_HOSTNAME", "Visiology-Server")
-ZABBIX_AGENT_IP = env("ZABBIX_AGENT_IP", "127.0.0.1")
+ZABBIX_AGENT_IP = env("ZABBIX_AGENT_IP", "172.17.0.1")
 ZABBIX_AGENT_PORT = env("ZABBIX_AGENT_PORT", "10050")
 ZABBIX_HOST_GROUP = env("ZABBIX_HOST_GROUP", "Visiology")
 ZABBIX_TEMPLATE_LINUX = env("ZABBIX_TEMPLATE_LINUX", "Linux by Zabbix agent 2")
@@ -143,6 +143,15 @@ def main():
     if existing:
         hostid = existing[0]["hostid"]
         print("Хост '%s' уже есть: %s. Триггер при необходимости будет добавлен." % (ZBX_HOSTNAME, hostid))
+        # Обновить IP/порт интерфейса агента (чтобы сервер в Docker мог опрашивать агента на хосте, напр. 172.17.0.1)
+        ifaces = api_request("hostinterface.get", {"hostids": hostid, "output": ["interfaceid", "ip", "port"]}, auth)
+        for iface in (ifaces or []):
+            api_request("hostinterface.update", {
+                "interfaceid": iface["interfaceid"],
+                "ip": ZABBIX_AGENT_IP,
+                "port": str(ZABBIX_AGENT_PORT),
+            }, auth)
+            print("Интерфейс агента обновлён: %s:%s" % (ZABBIX_AGENT_IP, ZABBIX_AGENT_PORT))
     else:
         hostid = api_request(
             "host.create",
@@ -165,13 +174,51 @@ def main():
         )["hostids"][0]
         print("Создан хост '%s': %s" % (ZBX_HOSTNAME, hostid))
 
+    # Элементы для виджетов дашборда (создаём до триггера, чтобы элемент диска существовал)
+    ifaces = api_request("hostinterface.get", {"hostids": hostid, "output": ["interfaceid"]}, auth)
+    interfaceid = int(ifaces[0]["interfaceid"]) if ifaces else None
+    dash_items = {}
+    # Ключи .list — читаемый список (имя, ID, статус). Диск: % и сводка «X GB из Y GB»
+    items_to_ensure = [
+        ("Docker: running containers list", "docker.containers.running.list", 4, None),
+        ("Docker: exited containers list", "docker.containers.exited.list", 4, None),
+        ("Docker: Swarm state", "docker.swarm.state", 4, None),
+        ("Disk: /hostfs free %", "vfs.fs.size[/hostfs,pfree]", 0, "%"),
+        ("Disk: /hostfs summary", "hostfs.disk.summary", 4, None),
+    ]
+    for name, key, value_type, units in items_to_ensure:
+        if key in dash_items:
+            continue
+        # В API Zabbix фильтр по ключу элемента — key_ (с подчёркиванием)
+        existing = api_request("item.get", {"hostids": hostid, "filter": {"key_": key}, "output": ["itemid"]}, auth)
+        if existing:
+            dash_items[key] = int(existing[0]["itemid"])
+        elif interfaceid:
+            try:
+                params = {
+                    "hostid": hostid,
+                    "name": name,
+                    "key_": key,
+                    "type": 0,
+                    "value_type": value_type,
+                    "interfaceid": interfaceid,
+                    "delay": "60s",
+                }
+                if units:
+                    params["units"] = units
+                res = api_request("item.create", params, auth)
+                dash_items[key] = int(res["itemids"][0])
+                print("Создан элемент: %s" % name)
+            except RuntimeError as e:
+                print("Элемент «%s» не создан: %s" % (name, e))
+
     # Триггер «свободно места < 25%»
     try:
         expr = TRIGGER_EXPRESSION_TEMPLATE.format(host=ZBX_HOSTNAME)
         triggers = api_request(
             "trigger.get",
             {
-                "output": ["triggerid"],
+                "output": ["triggerid", "expression"],
                 "hostids": hostid,
                 "search": {"description": "Диск: свободно меньше 25%"},
                 "searchByAny": False,
@@ -179,7 +226,11 @@ def main():
             auth,
         )
         if triggers:
-            print("Триггер «свободно меньше 25%» уже существует.")
+            if triggers[0].get("expression") != expr:
+                api_request("trigger.update", {"triggerid": triggers[0]["triggerid"], "expression": expr}, auth)
+                print("Триггер по диску обновлён: %s" % TRIGGER_DESCRIPTION)
+            else:
+                print("Триггер «свободно меньше 25%» уже существует.")
         else:
             api_request(
                 "trigger.create",
@@ -193,42 +244,6 @@ def main():
             print("Создан триггер: %s" % TRIGGER_DESCRIPTION)
     except RuntimeError as e:
         print("Триггер по диску не создан (можно добавить вручную): %s" % e)
-
-    # Элементы для виджетов дашборда. Agent 2 не поддерживает system.run — используем UserParameter (98_docker_commands.conf).
-    ifaces = api_request("hostinterface.get", {"hostids": hostid, "output": ["interfaceid"]}, auth)
-    interfaceid = int(ifaces[0]["interfaceid"]) if ifaces else None
-    dash_items = {}
-    # (name, key, value_type, units). Ключи docker.* — из UserParameter в agent2.d (API не позволяет менять ключ, создаём новые)
-    items_to_ensure = [
-        ("Docker: running containers", "docker.containers.running", 4, None),
-        ("Docker: exited containers", "docker.containers.exited", 4, None),
-        ("Docker: Swarm state", "docker.swarm.state", 4, None),
-        ("Disk: /hostfs free %", "vfs.fs.size[/hostfs,pfree]", 0, "%"),
-    ]
-    for name, key, value_type, units in items_to_ensure:
-        if key in dash_items:
-            continue
-        existing = api_request("item.get", {"hostids": hostid, "filter": {"key": key}, "output": ["itemid"]}, auth)
-        if existing:
-            dash_items[key] = int(existing[0]["itemid"])
-        elif interfaceid:
-            try:
-                params = {
-                    "hostid": hostid,
-                    "name": name,
-                    "key": key,
-                    "type": 0,
-                    "value_type": value_type,
-                    "interfaceid": interfaceid,
-                    "delay": "60s",
-                }
-                if units:
-                    params["units"] = units
-                res = api_request("item.create", params, auth)
-                dash_items[key] = int(res["itemids"][0])
-                print("Создан элемент: %s" % name)
-            except RuntimeError as e:
-                print("Элемент «%s» не создан: %s" % (name, e))
 
     # Дашборд «Главный экран»
     dashboard_name = "Главный экран"
@@ -250,7 +265,7 @@ def main():
             w.append({
                 "type": "item",
                 "name": "Запущенные контейнеры (docker ps)",
-                "x": 24, "y": 0, "width": 24, "height": 8, "view_mode": 0,
+                "x": 24, "y": 0, "width": 24, "height": 10, "view_mode": 0,
                 "fields": [{"type": 4, "name": "itemid.0", "value": str(item_running)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
             })
         item_exited = dash_items.get(items_to_ensure[1][1])
@@ -258,7 +273,7 @@ def main():
             w.append({
                 "type": "item",
                 "name": "Exited контейнеры",
-                "x": 48, "y": 0, "width": 24, "height": 8, "view_mode": 0,
+                "x": 48, "y": 0, "width": 24, "height": 10, "view_mode": 0,
                 "fields": [{"type": 4, "name": "itemid.0", "value": str(item_exited)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
             })
         # Ряд 1: Проблемы и предупреждения
@@ -275,19 +290,27 @@ def main():
                 {"type": 1, "name": "reference", "value": "PRB01"},
             ],
         })
-        # Ряд 2: Диск, Swarm
+        # Ряд 2: Диск (gauge + сводка объёма), Swarm
         item_disk = dash_items.get(items_to_ensure[3][1])
         if item_disk:
             w.append({
                 "type": "gauge",
                 "name": "Свободно места на диске (%)",
-                "x": 0, "y": 28, "width": 24, "height": 10, "view_mode": 0,
+                "x": 0, "y": 28, "width": 12, "height": 8, "view_mode": 0,
                 "fields": [
                     {"type": 4, "name": "itemid.0", "value": str(item_disk)},
                     {"type": 1, "name": "min", "value": "0"},
                     {"type": 1, "name": "max", "value": "100"},
                     {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}, {"type": 0, "name": "show.2", "value": 4}, {"type": 0, "name": "show.3", "value": 5},
                 ],
+            })
+        item_disk_summary = dash_items.get(items_to_ensure[4][1])
+        if item_disk_summary:
+            w.append({
+                "type": "item",
+                "name": "Диск: объём и свободно",
+                "x": 12, "y": 28, "width": 12, "height": 8, "view_mode": 0,
+                "fields": [{"type": 4, "name": "itemid.0", "value": str(item_disk_summary)}, {"type": 0, "name": "show.0", "value": 1}, {"type": 0, "name": "show.1", "value": 2}],
             })
         item_swarm = dash_items.get(items_to_ensure[2][1])
         if item_swarm:
@@ -314,15 +337,17 @@ def main():
             to_add = [nw for nw in new_widgets if nw["name"] not in existing_names]
             max_bottom = max((int(w.get("y", 0)) + int(w.get("height", 4)) for w in page.get("widgets", [])), default=0)
             pos_by_name = {
-                "Запущенные контейнеры (docker ps)": (0, max_bottom, 24, 8),
-                "Exited контейнеры": (24, max_bottom, 24, 8),
-                "Свободно места на диске (%)": (48, max_bottom, 24, 10),
+                "Запущенные контейнеры (docker ps)": (0, max_bottom, 24, 10),
+                "Exited контейнеры": (24, max_bottom, 24, 10),
+                "Свободно места на диске (%)": (48, max_bottom, 12, 8),
+                "Диск: объём и свободно": (48, max_bottom, 12, 8),
                 "Состояние Docker Swarm": (0, max_bottom + 10, 24, 10),
             }
             name_to_key = {
                 "Запущенные контейнеры (docker ps)": items_to_ensure[0][1],
                 "Exited контейнеры": items_to_ensure[1][1],
                 "Свободно места на диске (%)": items_to_ensure[3][1],
+                "Диск: объём и свободно": items_to_ensure[4][1],
                 "Состояние Docker Swarm": items_to_ensure[2][1],
             }
             clean_widgets = []

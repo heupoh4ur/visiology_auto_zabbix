@@ -10,7 +10,8 @@
 #   URL_MODE=v3zabbix — доступ по http://IP/v3/zabbix
 #   VISIOLOGY_INTEGRATE=1    — добавить /v3/zabbix в конфиг Visiology (только при URL_MODE=v3zabbix)
 #   DO_API_CONFIG=0          — не выполнять настройку через API (по умолчанию 1)
-#   SERVER_IP=192.168.1.1    — IP сервера (иначе определяется автоматически)
+#   SERVER_IP=192.168.1.1    — IP/хост для доступа к Zabbix (веб, редиректы)
+#   ZABBIX_AGENT_IP=172.17.0.1 — IP, по которому сервер в Docker опрашивает агента (по умолчанию авто: docker bridge)
 set -e
 
 DEBUG=0
@@ -35,8 +36,10 @@ URL_MODE="${URL_MODE:-}"
 DO_API_CONFIG="${DO_API_CONFIG:-1}"
 # Вносить ли изменения в конфиги Visiology (добавить /v3/zabbix в reverse proxy): 1 — да, 0 — нет
 VISIOLOGY_INTEGRATE="${VISIOLOGY_INTEGRATE:-0}"
-# IP сервера (для .env и блока Visiology)
+# IP/хост сервера — для доступа к Zabbix (веб, ZBX_FRONTEND_URL, Visiology)
 SERVER_IP="${SERVER_IP:-}"
+# IP, по которому сервер в Docker подключается к агенту (обычно gateway docker0, напр. 172.17.0.1). Пусто — авто.
+ZABBIX_AGENT_IP="${ZABBIX_AGENT_IP:-}"
 
 # Цвета и сброс
 R="\033[0;31m"
@@ -84,7 +87,7 @@ log_warn() {
   echo -e "${Y}[~]${N} $*"
 }
 
-# Определение IP сервера
+# Определение IP сервера (для веб-доступа и .env)
 detect_server_ip() {
   if [ -n "$SERVER_IP" ]; then
     return
@@ -97,6 +100,22 @@ detect_server_ip() {
   fi
   if [ -z "$SERVER_IP" ]; then
     SERVER_IP="127.0.0.1"
+  fi
+}
+
+# IP Docker bridge (gateway docker0) — с контейнера сервер по нему достучится до агента на хосте
+detect_docker_bridge_ip() {
+  if [ -n "$ZABBIX_AGENT_IP" ]; then
+    return
+  fi
+  if command -v ip >/dev/null 2>&1; then
+    ZABBIX_AGENT_IP="$(ip -4 addr show docker0 2>/dev/null | grep -oP 'inet \K[\d.]+' | head -1)"
+  fi
+  if [ -z "$ZABBIX_AGENT_IP" ] && command -v docker >/dev/null 2>&1; then
+    ZABBIX_AGENT_IP="$(docker network inspect bridge 2>/dev/null | grep -oP '"Gateway": "\K[^"]+' | head -1)"
+  fi
+  if [ -z "$ZABBIX_AGENT_IP" ]; then
+    ZABBIX_AGENT_IP="172.17.0.1"
   fi
 }
 
@@ -166,10 +185,18 @@ else
 fi
 
 detect_server_ip
-prompt_if_empty SERVER_IP "IP этого сервера (для .env и Visiology)" "$SERVER_IP"
+prompt_if_empty SERVER_IP "IP или хост сервера (адрес доступа к Zabbix, для .env и Visiology)" "$SERVER_IP"
+detect_docker_bridge_ip
+if [ -t 0 ] && [ -z "${ZABBIX_AGENT_IP_FROM_ENV:-}" ]; then
+  read -p "  IP для опроса агента сервером (Docker bridge, обычно 172.17.0.1) [${ZABBIX_AGENT_IP}]: " agent_ip_choice
+  if [ -n "$agent_ip_choice" ]; then
+    ZABBIX_AGENT_IP="$agent_ip_choice"
+  fi
+fi
+export ZABBIX_AGENT_IP
 
 echo ""
-log_step "Параметры: каталог=$INSTALL_DIR, URL=$URL_MODE, API=$DO_API_CONFIG, Visiology=$VISIOLOGY_INTEGRATE, IP=$SERVER_IP"
+log_step "Параметры: каталог=$INSTALL_DIR, URL=$URL_MODE, API=$DO_API_CONFIG, Visiology=$VISIOLOGY_INTEGRATE, IP_сервера=$SERVER_IP, IP_агента=$ZABBIX_AGENT_IP"
 echo ""
 
 # --- Создание каталога и копирование файлов ---
@@ -203,6 +230,12 @@ fi
 # Файлы для настройки по API
 cp -f "$SCRIPT_DIR/zabbix-init-config.py" "$INSTALL_DIR/" 2>/dev/null || true
 cp -f "$SCRIPT_DIR/zabbix-init-config.env" "$INSTALL_DIR/" 2>/dev/null || true
+# Локальный env для init-config (адрес Zabbix и IP агента для опроса из Docker)
+{
+  echo "# Сгенерировано установщиком. Для ручного запуска: python3 zabbix-init-config.py"
+  echo "ZABBIX_URL=http://${SERVER_IP}:8080"
+  echo "ZABBIX_AGENT_IP=${ZABBIX_AGENT_IP:-172.17.0.1}"
+} > "$INSTALL_DIR/zabbix-init-config.local.env" 2>/dev/null || true
 # Каталог agent2.d (99_server_active.conf, 98_docker_commands.conf для виджетов)
 if [ -d "$SCRIPT_DIR/agent2.d" ]; then
   mkdir -p "$INSTALL_DIR/agent2.d"
@@ -269,7 +302,7 @@ if [ "$DO_API_CONFIG" -eq 1 ]; then
   export ZABBIX_USER="${ZABBIX_USER:-Admin}"
   export ZABBIX_PASSWORD="${ZABBIX_PASSWORD:-zabbix}"
   export ZBX_HOSTNAME="${ZBX_HOSTNAME:-Visiology-Server}"
-  export ZABBIX_AGENT_IP="${ZABBIX_AGENT_IP:-$SERVER_IP}"
+  export ZABBIX_AGENT_IP="${ZABBIX_AGENT_IP:-172.17.0.1}"
   export ZABBIX_AGENT_PORT="${ZABBIX_AGENT_PORT:-10050}"
   if [ -f "$INSTALL_DIR/zabbix-init-config.py" ]; then
     if command -v python3 >/dev/null 2>&1; then
