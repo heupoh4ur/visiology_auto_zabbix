@@ -22,7 +22,7 @@ chmod +x install-zabbix.sh
 - **Каталог установки** (по умолчанию `~/zabbix`).
 - **Режим доступа:** 1) стандартный (**http://IP:8080**) или 2) по пути **/v3/zabbix** (**http://IP/v3/zabbix**).
 - При выборе /v3/zabbix — **вносить ли изменения в конфиги Visiology** (добавить блок в reverse proxy) или оставить Zabbix внешним компонентом.
-- **Выполнять ли настройку через API** (хост, шаблоны Linux/Docker, триггер «свободно места &lt; 25%»; по умолчанию да).
+- **Выполнять ли настройку через API** (хост, шаблоны Linux/Docker, триггер «свободно места &lt; 25%», дашборд «Главный экран»: проблемы, запущенные/exited контейнеры, диск, Swarm; по умолчанию да).
 
 **Режим отладки** (понять, на каком этапе произошла ошибка):
 
@@ -82,12 +82,12 @@ cd ~/zabbix
 
 Если используете скрипт **install-zabbix.sh** (раздел 0), выполните на сервере `git clone` репозитория (или скопируйте каталог на сервер), затем `chmod +x install-zabbix.sh` и `./install-zabbix.sh`.
 
-Вручную (без скрипта): с рабочей машины под Linux скопируйте файлы на сервер. Замените `РЕПО` на имя каталога репозитория, `IP_СЕРВЕРА` и имя пользователя при необходимости. Если планируете автоматическую настройку (п. 4.2), добавьте в команду `scp` файлы `zabbix-init-config.py` и `zabbix-init-config.env`.
+Вручную (без скрипта): с рабочей машины под Linux скопируйте файлы на сервер. Замените `РЕПО` на имя каталога репозитория, `IP_СЕРВЕРА` и имя пользователя при необходимости. Если планируете автоматическую настройку (п. 4.2), добавьте в команду `scp` файлы `zabbix-init-config.py`, `zabbix-init-config.env`, каталог `agent2.d` (с файлами `98_docker_commands.conf` и `99_server_active.conf`) и `Dockerfile.agent2` (для сборки образа агента с curl — виджеты дашборда).
 
 ```bash
 scp -P 22 РЕПО/docker-compose.yml РЕПО/nginx_http_d.conf РЕПО/.env.example USER@IP_СЕРВЕРА:~/zabbix/
 ```
-При использовании п. 4.2 добавьте к списку: `РЕПО/zabbix-init-config.py РЕПО/zabbix-init-config.env`
+При использовании п. 4.2 и виджетов дашборда (контейнеры, Swarm) добавьте: `РЕПО/zabbix-init-config.py`, `РЕПО/zabbix-init-config.env`, `scp -r РЕПО/agent2.d USER@IP_СЕРВЕРА:~/zabbix/`, `scp РЕПО/Dockerfile.agent2 USER@IP_СЕРВЕРА:~/zabbix/`.
 
 На сервере:
 
@@ -103,6 +103,20 @@ nano .env
 ---
 
 ## 3. Запуск Zabbix
+
+Если устанавливали через **install-zabbix.sh**, скрипт уже скопировал `Dockerfile.agent2`, собрал образ `zabbix-agent2-with-curl` и выполнил `docker compose up -d`. Дальнейшие шаги — только при ручной установке.
+
+При **ручной установке** перед первым запуском соберите образ агента с curl (для виджетов «Запущенные контейнеры», «Exited контейнеры», «Состояние Docker Swarm»):
+
+```bash
+cd ~/zabbix
+# или  cd /opt/zabbix
+docker build -f Dockerfile.agent2 -t zabbix-agent2-with-curl .
+```
+
+Если `Dockerfile.agent2` нет или сборка не нужна, в `.env` добавьте: `ZABBIX_AGENT2_IMAGE=zabbix/zabbix-agent2:alpine-7.4-latest` — тогда виджеты Docker/Swarm будут показывать «No data».
+
+Запуск контейнеров:
 
 ```bash
 cd ~/zabbix
@@ -366,7 +380,7 @@ Severity: **Warning**.
 
 - **docker-compose.yml** — сервисы: PostgreSQL, Zabbix Server, Zabbix Web (Nginx), Zabbix Agent 2 (с монтированием `/` в `/hostfs` и `docker.sock` для мониторинга хоста и Docker). У агента: `ZBX_SERVER_HOST: 127.0.0.1,172.16.0.0/12` (принимать пассивные проверки от сервера в контейнере), `user: "0:0"` (доступ к docker.sock, иначе «Docker failed to fetch info data»). Для доступа по /v3/zabbix в zabbix-web монтируется `nginx_http_d.conf`.
 - **zabbix-init-config.env** — пример переменных для скрипта автоматической настройки (URL, логин, имя хоста, IP агента). Копируется в `zabbix-init-config.local.env` и при необходимости редактируется.
-- **zabbix-init-config.py** — скрипт настройки Zabbix через API: создаёт группу, хост с агентом, подключает шаблоны **Linux by Zabbix agent 2** и **Docker by Zabbix agent 2**, добавляет триггер «свободно места на диске меньше 25%». Запуск: `python3 zabbix-init-config.py` (см. п. 4.2).
+- **zabbix-init-config.py** — скрипт настройки Zabbix через API: создаёт группу, хост с агентом, подключает шаблоны **Linux by Zabbix agent 2** и **Docker by Zabbix agent 2**, добавляет триггер «свободно места на диске меньше 25%» и дашборд **«Главный экран»** с виджетами: проблемы по важности, список запущенных контейнеров (аналог docker ps), только exited-контейнеры, заполненность диска (%), состояние Docker Swarm. Запуск: `python3 zabbix-init-config.py` (см. п. 4.2).
 - **install-zabbix.sh** — установка «в один клик»: копирует файлы, поднимает контейнеры, при необходимости настраивает Zabbix через API и добавляет /v3/zabbix в Visiology. Запуск: `./install-zabbix.sh` (интерактивно) или `./install-zabbix.sh -d` (отладка). Параметры через переменные: `INSTALL_DIR`, `URL_MODE`, `DO_API_CONFIG`, `VISIOLOGY_INTEGRATE`, `SERVER_IP` (см. раздел 0).
 - **nginx_http_d_standard.conf** — конфиг nginx для режима доступа по **http://IP:8080** (без префикса /v3/zabbix); используется скриптом при `URL_MODE=standard`.
 - **nginx_http_d.conf** — кастомный конфиг nginx в контейнере zabbix-web: обработка пути `/v3/zabbix/` (PHP с полным REQUEST_URI и статика), чтобы не было циклических редиректов и скачивания zabbix.php.

@@ -203,8 +203,31 @@ fi
 # Файлы для настройки по API
 cp -f "$SCRIPT_DIR/zabbix-init-config.py" "$INSTALL_DIR/" 2>/dev/null || true
 cp -f "$SCRIPT_DIR/zabbix-init-config.env" "$INSTALL_DIR/" 2>/dev/null || true
+# Каталог agent2.d (99_server_active.conf, 98_docker_commands.conf для виджетов)
+if [ -d "$SCRIPT_DIR/agent2.d" ]; then
+  mkdir -p "$INSTALL_DIR/agent2.d"
+  cp -f "$SCRIPT_DIR/agent2.d/"*.conf "$INSTALL_DIR/agent2.d/" 2>/dev/null || true
+fi
+# Dockerfile агента с curl (для виджетов контейнеров/Swarm на дашборде)
+cp -f "$SCRIPT_DIR/Dockerfile.agent2" "$INSTALL_DIR/" 2>/dev/null || true
 stop_spinner
 log_step "Файлы скопированы в $INSTALL_DIR"
+
+# --- Сборка образа агента с curl (для виджетов дашборда) ---
+if [ -f "$INSTALL_DIR/Dockerfile.agent2" ]; then
+  log_step "Сборка образа агента (zabbix-agent2-with-curl)..."
+  spinner_start "docker build"
+  if ( cd "$INSTALL_DIR" && docker build -f Dockerfile.agent2 -t zabbix-agent2-with-curl . ); then
+    stop_spinner
+    log_step "Образ zabbix-agent2-with-curl собран"
+  else
+    stop_spinner
+    log_warn "Сборка образа агента не удалась. Будет использован стандартный образ (виджеты Docker/Swarm могут показывать «No data»)."
+    if ! grep -q '^ZABBIX_AGENT2_IMAGE=' "$INSTALL_DIR/.env" 2>/dev/null; then
+      echo "ZABBIX_AGENT2_IMAGE=zabbix/zabbix-agent2:alpine-7.4-latest" >> "$INSTALL_DIR/.env"
+    fi
+  fi
+fi
 
 # --- Запуск контейнеров ---
 log_step "Запуск Docker Compose..."
@@ -240,7 +263,7 @@ fi
 
 # --- Настройка через API ---
 if [ "$DO_API_CONFIG" -eq 1 ]; then
-  log_step "Настройка Zabbix через API (хост, шаблоны, триггер)..."
+  log_step "Настройка Zabbix через API (хост, шаблоны, триггер, дашборд)..."
   spinner_start "API: группа, хост, триггер"
   export ZABBIX_URL="http://${SERVER_IP}:8080"
   export ZABBIX_USER="${ZABBIX_USER:-Admin}"
@@ -266,7 +289,7 @@ if [ "$DO_API_CONFIG" -eq 1 ]; then
     log_warn "Файл zabbix-init-config.py не найден. Настройте хост и шаблоны вручную."
   fi
   stop_spinner
-  log_step "Настройка через API завершена"
+  log_step "Настройка через API завершена (хост, шаблоны, триггер, дашборд «Главный экран»: проблемы, контейнеры, диск, Swarm)"
 fi
 
 # --- Интеграция с Visiology (добавить /v3/zabbix в reverse proxy) ---

@@ -72,13 +72,15 @@ services:
   # В Server должны быть и 127.0.0.1, и подсеть Docker (172.16.0.0/12), иначе сервер из контейнера не достучится до агента (пассивные проверки).
   # user: "0:0" — чтобы процесс имел доступ к docker.sock (иначе «Docker failed to fetch info data»).
   zabbix-agent2:
-    image: zabbix/zabbix-agent2:alpine-7.4-latest
+    # Образ с curl для виджетов дашборда (установщик собирает из Dockerfile.agent2). Без сборки: ZABBIX_AGENT2_IMAGE=zabbix/zabbix-agent2:alpine-7.4-latest в .env
+    image: ${ZABBIX_AGENT2_IMAGE:-zabbix-agent2-with-curl}
     container_name: zabbix-agent2
     restart: unless-stopped
     user: "0:0"
     environment:
       ZBX_SERVER_HOST: ${ZBX_SERVER_HOST:-127.0.0.1,172.16.0.0/12}
       ZBX_SERVER_PORT: 10051
+      ZBX_SERVER_ACTIVE: 127.0.0.1
       ZBX_HOSTNAME: ${ZBX_HOSTNAME:-Visiology-Server}
       ZBX_HOSTMETADATA: ${ZBX_HOSTMETADATA:-visiology}
       ZBX_HOSTFS: /hostfs
@@ -87,6 +89,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/hostfs/proc:ro
       - /sys:/hostfs/sys:ro
+      - ./agent2.d/98_docker_commands.conf:/etc/zabbix/zabbix_agent2.d/98_docker_commands.conf:ro
+      - ./agent2.d/99_server_active.conf:/etc/zabbix/zabbix_agent2.d/99_server_active.conf:ro
     privileged: true
     pid: host
     network_mode: host

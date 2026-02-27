@@ -1,0 +1,7 @@
+# Образ Zabbix Agent 2 с curl для виджетов дашборда (Docker API по сокету).
+# Сборка: docker build -f Dockerfile.agent2 -t zabbix-agent2-with-curl .
+# В docker-compose.yml замените image на zabbix-agent2-with-curl (или свой тег).
+FROM zabbix/zabbix-agent2:alpine-7.4-latest
+USER root
+RUN apk add --no-cache curl
+USER zabbix
